@@ -24,11 +24,14 @@ dependencies:
 - async
 - containers
 - mtl
+- network
 - stm
 - text
 
 library:
   source-dirs: src
+  ghc-options:
+  - -Wall
 
 executables:
   pubsub-haskell-exe:
@@ -38,6 +41,7 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    - -Wall
     dependencies:
     - pubsub-haskell
 
@@ -49,5 +53,6 @@ tests:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    - -Wall
     dependencies:
     - pubsub-haskell

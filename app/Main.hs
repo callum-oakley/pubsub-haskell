@@ -1,32 +1,39 @@
-module Main where
+{-# LANGUAGE OverloadedStrings #-}
 
-import qualified Control.Concurrent.Async as Async
-import           Control.Concurrent.STM   (STM, TQueue)
-import qualified Control.Concurrent.STM   as STM
-import           Data.Map.Strict          (Map)
-import qualified Data.Map.Strict          as Map
-import           Data.Text                (Text)
-import qualified Data.Text                as Text
+module Main
+  ( main
+  ) where
 
-type Channel = Text
+import qualified Control.Concurrent.STM as STM
+import qualified Data.Maybe             as Maybe
+import qualified Network.Socket         as Socket
+import qualified System.Environment     as Environment
+import qualified Text.Read              as Read
 
-type Message = Text
-
-type Bus = STM.TVar (Map Channel [STM.TQueue Message])
-
-subscribe :: Bus -> Channel -> STM (STM.TQueue Message)
-subscribe bus channel = do
-  queue <- STM.newTQueue
-  STM.stateTVar bus (insert queue)
-  where
-    insert queue bus = (queue, Map.insertWith (++) channel [queue] bus)
-
-publish :: Bus -> Channel -> Message -> STM ()
-publish bus channel message = do
-  bus' <- STM.readTVar bus
-  mapM_ (mapM_ $ write message) $ Map.lookup channel bus'
-  where
-    write message = flip STM.writeTQueue message
+import qualified Bus
+import           Server                 (Server (..))
+import qualified Server
 
 main :: IO ()
-main = putStrLn "hello"
+main = do
+  server <- Server <$> STM.atomically Bus.newBus
+  env <- Environment.lookupEnv "PORT"
+  let port = maybe 8081 readPort env :: Int
+  addr <-
+    head <$>
+    Socket.getAddrInfo
+      (Just Socket.defaultHints {Socket.addrSocketType = Socket.Stream})
+      (Just "localhost")
+      (Just $ show port)
+  socket <-
+    Socket.socket
+      (Socket.addrFamily addr)
+      (Socket.addrSocketType addr)
+      (Socket.addrProtocol addr)
+  Socket.setSocketOption socket Socket.ReuseAddr 1
+  Socket.bind socket $ Socket.addrAddress addr
+  Socket.listen socket 1024
+  Server.listen server socket
+  where
+    readPort =
+      Maybe.fromMaybe (error "failed to parse PORT as Int") . Read.readMaybe
