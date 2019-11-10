@@ -52,16 +52,18 @@ handlePub server conn channel message = do
   logTexts ["PUB", channel, message]
   TIO.hPutStr conn "ACK\r\n"
   STM.atomically $ Bus.publish (bus server) channel message
+  Bus.debugReport (bus server)
   handle server conn
 
--- TODO handle disconnects
+-- TODO handle disconnects. Wrap hPutStrs in try and unsubscribe on error?
 handleSub :: Server -> Handle -> Bus.Channel -> IO ()
 handleSub server conn channel = do
   logTexts ["SUB", channel]
   TIO.hPutStr conn "ACK\r\n"
-  queue <- STM.atomically $ Bus.subscribe (bus server) channel
+  (sub, unsubscribe) <- STM.atomically $ Bus.subscribe (bus server) channel
+  Bus.debugReport (bus server)
   forever $ do
-    message <- STM.atomically $ STM.readTQueue queue
+    message <- STM.atomically $ STM.readTQueue sub
     TIO.hPutStr conn $ Text.concat ["MSG\r\n", message, "\r\n"]
 
 logTexts :: [Text] -> IO ()

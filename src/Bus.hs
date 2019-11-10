@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Bus
   ( Bus
   , Channel
@@ -5,6 +7,7 @@ module Bus
   , newBus
   , publish
   , subscribe
+  , debugReport
   ) where
 
 import           Control.Concurrent.STM (STM)
@@ -17,22 +20,43 @@ type Channel = Text
 
 type Message = Text
 
-type Bus = STM.TVar (Map Channel [STM.TQueue Message])
+data Bus =
+  Bus
+    { subscriptions :: STM.TVar (Map Channel (Map Integer (STM.TQueue Message)))
+    , nextSubID     :: STM.TVar Integer
+    }
 
 newBus :: STM Bus
-newBus = STM.newTVar Map.empty
+newBus = do
+  subs <- STM.newTVar Map.empty
+  subID <- STM.newTVar 0
+  return Bus {subscriptions = subs, nextSubID = subID}
 
 publish :: Bus -> Channel -> Message -> STM ()
 publish bus channel message = do
-  bus' <- STM.readTVar bus
-  (mapM_ . mapM_ $ write message) $ Map.lookup channel bus'
+  subs <- STM.readTVar $ subscriptions bus
+  (mapM_ . mapM_ $ write message) $ Map.lookup channel subs
   where
     write = flip STM.writeTQueue
 
--- TODO mechanism for unsubscribing
-subscribe :: Bus -> Channel -> STM (STM.TQueue Message)
+subscribe :: Bus -> Channel -> STM (STM.TQueue Message, STM ())
 subscribe bus channel = do
-  queue <- STM.newTQueue
-  STM.stateTVar bus $ insert queue
+  sub <- STM.newTQueue
+  subID <- STM.readTVar $ nextSubID bus
+  STM.modifyTVar (nextSubID bus) succ
+  STM.modifyTVar (subscriptions bus) (insert subID sub)
+  return (sub, remove subID)
   where
-    insert queue b = (queue, Map.insertWith (++) channel [queue] b)
+    insert subID sub =
+      Map.alter
+        (\case
+           Just subs -> Just $ Map.insert subID sub subs
+           Nothing -> Just $ Map.fromList [(subID, sub)])
+        channel
+    remove subID =
+      STM.modifyTVar (subscriptions bus) (Map.adjust (Map.delete subID) channel)
+
+debugReport :: Bus -> IO ()
+debugReport bus = do
+  bus' <- STM.atomically $ STM.readTVar $ subscriptions bus
+  putStr $ "#subscriptions: " ++ (show $ sum $ fmap length bus') ++ "\n"
