@@ -42,8 +42,7 @@ publish bus channel message = do
 subscribe :: Bus -> Channel -> STM (STM.TQueue Message, STM ())
 subscribe bus channel = do
   sub <- STM.newTQueue
-  subID <- STM.readTVar $ nextSubID bus
-  STM.modifyTVar (nextSubID bus) succ
+  subID <- STM.stateTVar (nextSubID bus) (\s -> (s, s + 1))
   STM.modifyTVar (subscriptions bus) (insert subID sub)
   return (sub, remove subID)
   where
