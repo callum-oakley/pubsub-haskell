@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Request
@@ -13,7 +12,7 @@ import           System.IO                  (Handle)
 import qualified Bus
 import           Error                      (Error)
 import qualified Error
-import           IO
+import           ExceptTErrorIO
 
 data Request
   = Pub Bus.Channel Bus.Message

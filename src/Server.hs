@@ -20,7 +20,7 @@ import qualified System.IO                  as IO
 import           Bus                        (Bus)
 import qualified Bus
 import           Error                      (Error)
-import           IO
+import           ExceptTErrorIO
 import           Request                    (Request (..))
 import qualified Request
 

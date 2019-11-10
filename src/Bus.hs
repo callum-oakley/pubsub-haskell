@@ -59,4 +59,4 @@ subscribe bus channel = do
 debugReport :: Bus -> IO ()
 debugReport bus = do
   bus' <- STM.atomically $ STM.readTVar $ subscriptions bus
-  putStr $ "#subscriptions: " ++ (show $ sum $ fmap length bus') ++ "\n"
+  putStr $ "#subscriptions: " ++ show (sum $ fmap length bus') ++ "\n"

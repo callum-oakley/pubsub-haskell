@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module IO
+module ExceptTErrorIO
   ( hGetLine
   , hPutLines
   , putLine
@@ -22,7 +22,7 @@ import qualified Error
 hGetLine :: Handle -> ExceptT Error IO Text
 hGetLine =
   Except.withExceptT Error.IOError .
-  ExceptT . IOError.tryIOError . (fmap Text.strip) . TIO.hGetLine
+  ExceptT . IOError.tryIOError . fmap Text.strip . TIO.hGetLine
 
 hPutLines :: Handle -> [Text] -> ExceptT Error IO ()
 hPutLines conn ts =
