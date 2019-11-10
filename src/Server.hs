@@ -64,6 +64,7 @@ handlePub server conn channel message = do
     Bus.debugReport (bus server)
     handle server conn
 
+-- TODO better to use "bracket" to do the unsubscribe?
 handleSub :: Server -> Handle -> Bus.Channel -> ExceptT Error IO ()
 handleSub server conn channel = do
   putLine ["SUB", channel]
