@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Request
@@ -5,27 +6,29 @@ module Request
   , newRequest
   ) where
 
-import           Data.Text    (Text)
-import qualified Data.Text    as Text
-import qualified Data.Text.IO as TIO
-import           System.IO    (Handle)
+import           Control.Monad.Trans.Except (ExceptT (..))
+import qualified Control.Monad.Trans.Except as Except
+import           System.IO                  (Handle)
 
 import qualified Bus
+import           Error                      (Error)
+import qualified Error
+import           IO
 
 data Request
   = Pub Bus.Channel Bus.Message
   | Sub Bus.Channel
   deriving (Show)
 
-newRequest :: Handle -> IO (Either Text Request)
+newRequest :: Handle -> ExceptT Error IO Request
 newRequest conn = do
-  op <- Text.strip <$> TIO.hGetLine conn
+  op <- hGetLine conn
   case op of
     "PUB" -> do
-      channel <- Text.strip <$> TIO.hGetLine conn
-      message <- Text.strip <$> TIO.hGetLine conn
-      return $ Right $ Pub channel message
+      channel <- hGetLine conn
+      message <- hGetLine conn
+      return $ Pub channel message
     "SUB" -> do
-      channel <- Text.strip <$> TIO.hGetLine conn
-      return $ Right $ Sub channel
-    _ -> return $ Left $ Text.append "Unknown operation: " op
+      channel <- hGetLine conn
+      return $ Sub channel
+    _ -> Except.throwE $ Error.UnknownOperation op

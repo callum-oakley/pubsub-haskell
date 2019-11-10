@@ -5,21 +5,23 @@ module Server
   , listen
   ) where
 
-import           Control.Concurrent.Async (async)
-import qualified Control.Concurrent.STM   as STM
-import           Control.Monad            (forever)
-import qualified Data.List                as List
-import           Data.Text                (Text)
-import qualified Data.Text                as Text
-import qualified Data.Text.IO             as TIO
-import           Network.Socket           (Socket)
-import qualified Network.Socket           as Socket
-import           System.IO                (Handle)
-import qualified System.IO                as IO
+import           Control.Concurrent.Async   (async)
+import qualified Control.Concurrent.STM     as STM
+import           Control.Monad              (forever)
+import qualified Control.Monad.Trans        as MTrans
+import           Control.Monad.Trans.Except (ExceptT)
+import qualified Control.Monad.Trans.Except as Except
+import qualified Data.Text                  as Text
+import           Network.Socket             (Socket)
+import qualified Network.Socket             as Socket
+import           System.IO                  (Handle)
+import qualified System.IO                  as IO
 
-import           Bus                      (Bus)
+import           Bus                        (Bus)
 import qualified Bus
-import           Request                  (Request (..))
+import           Error                      (Error)
+import           IO
+import           Request                    (Request (..))
 import qualified Request
 
 newtype Server =
@@ -37,35 +39,42 @@ listen server socket = do
 
 handle :: Server -> Handle -> IO ()
 handle server conn = do
-  request <- Request.newRequest conn
-  case request of
+  res <-
+    Except.runExceptT $ do
+      request <- Request.newRequest conn
+      case request of
+        Pub channel message -> handlePub server conn channel message
+        Sub channel         -> handleSub server conn channel
+  case res of
     Left err -> do
-      logTexts ["ERR", err]
-      TIO.hPutStr conn $
-        Text.concat ["ERR\r\nfailed to parse request: ", err, "\r\n"]
-      handle server conn
-    Right (Pub channel message) -> handlePub server conn channel message
-    Right (Sub channel) -> handleSub server conn channel
+      _ <-
+        Except.runExceptT $ do
+          putLine ["ERR", Text.pack $ show err]
+          hPutLines conn ["ERR", Text.pack $ show err]
+      IO.hClose conn
+    Right _ -> return ()
 
-handlePub :: Server -> Handle -> Bus.Channel -> Bus.Message -> IO ()
+handlePub ::
+     Server -> Handle -> Bus.Channel -> Bus.Message -> ExceptT Error IO ()
 handlePub server conn channel message = do
-  logTexts ["PUB", channel, message]
-  TIO.hPutStr conn "ACK\r\n"
-  STM.atomically $ Bus.publish (bus server) channel message
-  Bus.debugReport (bus server)
-  handle server conn
+  putLine ["PUB", channel, message]
+  hPutLines conn ["ACK"]
+  MTrans.lift $ do
+    STM.atomically $ Bus.publish (bus server) channel message
+    Bus.debugReport (bus server)
+    handle server conn
 
--- TODO handle disconnects. Wrap hPutStrs in try and unsubscribe on error?
-handleSub :: Server -> Handle -> Bus.Channel -> IO ()
+handleSub :: Server -> Handle -> Bus.Channel -> ExceptT Error IO ()
 handleSub server conn channel = do
-  logTexts ["SUB", channel]
-  TIO.hPutStr conn "ACK\r\n"
-  (sub, unsubscribe) <- STM.atomically $ Bus.subscribe (bus server) channel
-  Bus.debugReport (bus server)
-  forever $ do
-    message <- STM.atomically $ STM.readTQueue sub
-    TIO.hPutStr conn $ Text.concat ["MSG\r\n", message, "\r\n"]
-
-logTexts :: [Text] -> IO ()
-logTexts ts =
-  TIO.putStr $ Text.append (Text.concat $ List.intersperse " " ts) "\n"
+  putLine ["SUB", channel]
+  hPutLines conn ["ACK"]
+  (sub, unsubscribe) <-
+    MTrans.lift $ STM.atomically $ Bus.subscribe (bus server) channel
+  MTrans.lift $ Bus.debugReport (bus server)
+  forever $
+    Except.catchE
+      (do message <- MTrans.lift $ STM.atomically $ STM.readTQueue sub
+          hPutLines conn ["MSG", message])
+      (\e -> do
+         MTrans.lift $ STM.atomically unsubscribe
+         Except.throwE e)

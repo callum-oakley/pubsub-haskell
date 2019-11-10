@@ -27,6 +27,7 @@ dependencies:
 - network
 - stm
 - text
+- transformers
 
 library:
   source-dirs: src
